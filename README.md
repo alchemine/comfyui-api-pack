@@ -158,6 +158,7 @@ Same inputs as **Grok Generate** (minus `poll_interval`/`timeout`), plus an opti
 | Node | Description |
 |------|-------------|
 | **OpenAI Inference** | Generate text via any OpenAI-compatible API. Supports vision and thinking mode. |
+| **Clef Decide** | Zero-shot classification with a Clef decision model served by llama-server: probabilities for typed questions about a state. |
 
 #### OpenAI Inference
 
@@ -182,6 +183,43 @@ A single node for every OpenAI-compatible backend — OpenAI, vLLM, Ollama's `/v
 | `reasoning` | The reasoning/thinking trace, from `reasoning_content` or an inline `<think>...</think>` block (empty if none) |
 
 > **Note:** Responses are cached in-memory (LRU, last 10 unique input combinations) — re-running an identical request returns the cached response without calling the API.
+
+#### Clef Decide
+
+Sends `state`, `questions` and `image` to llama-server's `/v1/systemone` endpoint, serving a Clef decision model such as [clef-flash](https://huggingface.co/Cloudflare/clef-flash). The model returns a probability for every option of every question instead of generating text. Use it for zero-shot classification: write the labels in `criteria` and the model scores them without any training on your data.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `state` | STRING | "" | Content to evaluate |
+| `questions` | STRING | one `noul` question | JSON object mapping a question id to a typed question |
+| `base_url` | STRING | "http://localhost:8082" | llama-server base URL |
+| `api_key` | STRING | "" | API key, sent as a Bearer token when set |
+| `model` | STRING | "" | Model name, sent when set |
+| `image` | IMAGE | (optional) | Images placed before the state, one per batch item. The server must be started with `--mmproj` |
+
+| Output | Description |
+|--------|-------------|
+| `answers` | The response's `answers` as JSON, keyed by question id |
+
+Question types:
+
+| Type | `criteria` | Answer |
+|------|------------|--------|
+| `choice` | `{"option": "description" or null, ...}` | `choice`, `confidence`, `probabilities` |
+| `score` | `["lowest", ..., "highest"]` (2 to 10 levels) | expected `score`, `confidence`, `legend`, `probabilities` |
+| `noul` | optional `{"true": "description", "false": "description"}` | probability of true |
+
+```json
+{
+  "route": {
+    "type": "choice",
+    "instructions": "Which team should handle the message?",
+    "criteria": {"billing": "Payments or invoices", "technical": "Bugs or outages"}
+  },
+  "urgency": {"type": "score", "instructions": "How urgent is it?", "criteria": ["Can wait", "This week", "Today"]},
+  "outage": {"type": "noul", "instructions": "Is a service down?"}
+}
+```
 
 ## Configuration
 

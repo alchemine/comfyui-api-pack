@@ -6,6 +6,7 @@ etc.) — just point `base_url`/`api_key`/`model` at the desired server.
 """
 
 import re
+import json
 from os import environ
 from io import BytesIO
 from base64 import b64encode
@@ -300,6 +301,88 @@ class OpenAIInference(BaseInference):
             temperature,
             think,
         )
+
+
+class ClefDecide(BaseInference):
+    """Decision with a Clef model served by llama-server's `/v1/systemone`.
+
+    The model does not generate text: it returns a probability for every option
+    of every question in `questions`, given `state` (and `image`).
+
+    Args:
+        state (str): Content to evaluate.
+        questions (str): JSON object mapping a question id to a typed question
+            (`choice`, `score` or `noul`).
+        base_url (str): llama-server base URL.
+        api_key (str): API key, sent only when set.
+        model (str): Model name, sent only when set.
+        image (torch.Tensor | None): Images placed before the state.
+            Must be a 4D tensor in the shape of [B, H, W, C].
+
+    Returns:
+        tuple[str]: The response's `answers` as JSON.
+    """
+
+    INPUT_TYPES = lambda: {
+        "required": {
+            "state": ("STRING", {"default": "", "multiline": True}),
+            "questions": (
+                "STRING",
+                {
+                    "default": json.dumps(
+                        {
+                            "positive": {
+                                "type": "noul",
+                                "instructions": "Is the text positive?",
+                            }
+                        },
+                        indent=2,
+                    ),
+                    "multiline": True,
+                },
+            ),
+            "base_url": ("STRING", {"default": "http://localhost:8082"}),
+            "api_key": ("STRING", {"default": ""}),
+            "model": ("STRING", {"default": ""}),
+        },
+        "optional": {
+            "image": ("IMAGE", {"default": None}),
+        },
+    }
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("answers",)
+    FUNCTION = "execute"
+    CATEGORY = "ApiPack/Inference"
+
+    @classmethod
+    def execute(
+        cls,
+        state: str,
+        questions: str,
+        base_url: str,
+        api_key: str = "",
+        model: str = "",
+        image: torch.Tensor | None = None,
+    ) -> tuple[str]:
+        payload = {"state": state, "questions": json.loads(questions)}
+        if model:
+            payload["model"] = model
+        if image is not None:
+            payload["images"] = [
+                f"data:image/png;base64,{cls.encode_image(frame[None])}"
+                for frame in image
+            ]
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+        response = _session.post(
+            f"{base_url.rstrip('/')}/v1/systemone",
+            headers=headers,
+            json=payload,
+            timeout=(CONNECT_TIMEOUT, None),
+        )
+        response.raise_for_status()
+        answers = response.json()["answers"]
+        return (json.dumps(answers, ensure_ascii=False),)
 
 
 if __name__ == "__main__":

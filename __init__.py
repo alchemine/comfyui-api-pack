@@ -2,7 +2,7 @@
 
 from .nodes.api import LoadWorkflow, ApiGenerate, ApiSubmit, ApiCollect
 from .nodes.grok import GrokGenerate, GrokSubmit, GrokCollect
-from .nodes.inference import OpenAIInference
+from .nodes.inference import OpenAIInference, ClefDecide
 
 
 NODE_CLASS_MAPPINGS = {
@@ -17,6 +17,7 @@ NODE_CLASS_MAPPINGS = {
     "GrokCollect": GrokCollect,
     # ApiPack/Inference ##############################################################
     "OpenAIInference": OpenAIInference,
+    "ClefDecide": ClefDecide,
 }
 
 
@@ -32,4 +33,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "GrokCollect": "Grok Collect",
     # ApiPack/Inference ##############################################################
     "OpenAIInference": "OpenAI Inference",
+    "ClefDecide": "Clef Decide",
 }

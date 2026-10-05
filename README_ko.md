@@ -158,6 +158,7 @@
 | 노드 | 설명 |
 |------|------|
 | **OpenAI Inference** | OpenAI 호환 API로 텍스트 생성. 비전 및 씽킹 모드 지원. |
+| **Clef Decide** | llama-server에 올린 Clef 결정 모델로 zero-shot 분류를 합니다. state에 대한 질문마다 답의 확률을 구합니다. |
 
 #### OpenAI Inference
 
@@ -182,6 +183,43 @@ OpenAI 호환 백엔드를 하나의 노드로 모두 처리합니다 — OpenAI
 | `reasoning` | 사고 과정. `reasoning_content` 필드 또는 인라인 `<think>...</think>` 블록에서 추출 (없으면 빈 문자열) |
 
 > **참고:** 응답은 인메모리 캐싱됩니다 (LRU, 최근 10개 입력 조합) — 완전히 동일한 요청을 다시 실행하면 API 호출 없이 캐시된 응답을 반환합니다.
+
+#### Clef Decide
+
+`state`, `questions`, `image`를 llama-server의 `/v1/systemone` 엔드포인트로 보냅니다. 서버에는 [clef-flash](https://huggingface.co/Cloudflare/clef-flash) 같은 Clef 결정 모델이 올라가 있어야 합니다. 이 모델은 글을 생성하지 않고, 질문마다 모든 선택지의 확률을 돌려줍니다. zero-shot 분류에 쓸 수 있습니다. `criteria`에 라벨을 적으면 따로 학습시키지 않아도 모델이 라벨마다 확률을 매깁니다.
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|----------|------|--------|------|
+| `state` | STRING | "" | 평가할 내용 |
+| `questions` | STRING | `noul` 질문 하나 | 질문 id를 키로 한 질문 객체의 JSON |
+| `base_url` | STRING | "http://localhost:8082" | llama-server 주소 |
+| `api_key` | STRING | "" | API 키. 값이 있으면 Bearer 토큰으로 보냅니다. |
+| `model` | STRING | "" | 모델 이름. 값이 있으면 보냅니다. |
+| `image` | IMAGE | (선택) | state 앞에 놓이는 이미지. 배치의 장마다 하나씩 보냅니다. 서버를 `--mmproj`로 띄워야 합니다. |
+
+| 출력 | 설명 |
+|------|------|
+| `answers` | 응답의 `answers`를 JSON으로 돌려줍니다. 키는 질문 id입니다. |
+
+질문 타입:
+
+| 타입 | `criteria` | 답 |
+|------|------------|----|
+| `choice` | `{"선택지": "설명" 또는 null, ...}` | `choice`, `confidence`, `probabilities` |
+| `score` | `["가장 낮음", ..., "가장 높음"]` (2~10단계) | 기댓값 `score`, `confidence`, `legend`, `probabilities` |
+| `noul` | 선택. `{"true": "설명", "false": "설명"}` | 참일 확률 |
+
+```json
+{
+  "route": {
+    "type": "choice",
+    "instructions": "어느 팀이 이 문의를 처리해야 하나?",
+    "criteria": {"billing": "결제, 환불, 청구서", "technical": "버그, 장애, 로그인 문제"}
+  },
+  "urgency": {"type": "score", "instructions": "얼마나 긴급한가?", "criteria": ["나중에 처리해도 됨", "이번 주", "오늘"]},
+  "outage": {"type": "noul", "instructions": "서비스가 멈췄는가?"}
+}
+```
 
 ## 설정
 
