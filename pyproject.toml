@@ -1,0 +1,36 @@
+[project]
+name = "comfyui-api-pack"
+description = """Call external APIs: remote ComfyUI, Grok, OpenAI-compatible inference, zero-shot classification
+[a/Inference](https://github.com/alchemine/comfyui-api-pack/blob/main/workflows/comfyui-api-pack-workflow-Inference.png): OpenAI-compatible API Inference
+[a/ZeroShot](https://github.com/alchemine/comfyui-api-pack/blob/main/workflows/comfyui-api-pack-workflow-ZeroShot.png): zero-shot classification
+[a/API](https://github.com/alchemine/comfyui-api-pack/blob/main/workflows/comfyui-api-pack-workflow-API.png): remote ComfyUI API execution"""
+
+version = "1.0.0"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+
+[project.urls]
+Repository = "https://github.com/alchemine/comfyui-api-pack"
+"Bug Tracker" = "https://github.com/alchemine/comfyui-api-pack/issues"
+
+[tool.comfy]
+PublisherId = "alchemine"
+DisplayName = "ComfyUI-API-Pack"
+Icon = ""
+
+[tool.ruff]
+lint.select = [
+  "N805", # invalid-first-argument-name-for-method
+  "S307", # suspicious-eval-usage
+  "S102", # exec
+  "E",
+  "T",    # print-usage
+  "W",
+  # The "F" series in Ruff stands for "Pyflakes" rules, which catch various Python syntax errors and undefined names.
+  # See all rules here: https://docs.astral.sh/ruff/rules/#pyflakes-f
+  "F",
+]
+
+lint.ignore = ["E501", "E722", "E731", "E712", "E402", "E741"]
+
+exclude = ["*.ipynb"]
