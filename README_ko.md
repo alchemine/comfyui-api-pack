@@ -2,212 +2,49 @@
 
 [English](README.md) | [한국어](README_ko.md)
 
-외부 API를 호출하는 노드 모음입니다: 원격 ComfyUI API 실행, Grok 이미지-투-비디오, OpenAI 호환 추론.
+외부 API를 호출하는 노드 모음입니다. llama-server로 zero-shot 분류를 하고, OpenAI 호환 API로 추론하고,
+원격 ComfyUI에서 워크플로를 실행하고, Grok으로 이미지를 비디오로 만듭니다.
 
-## 설치 방법
+## 예시
 
-1. 이 저장소를 ComfyUI의 `custom_nodes` 디렉터리에 클론하거나 복사합니다.
-2. 의존성 설치:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. ComfyUI를 재시작합니다.
+![Workflow](workflows/comfyui-api-pack-workflow-ZeroShot.png)
 
-## 제공 노드
-
-### API 노드 (`ApiPack/API`)
-
-![API Workflow](workflows/comfyui-api-pack-workflow-API.png)
-
-워크플로우를 원격 ComfyUI 인스턴스의 HTTP API로 실행합니다 (예: [RunPod](https://www.runpod.io/) 파드 또는 접근 가능한 임의의 ComfyUI). 모든 노드는 UI 워크플로우 포맷이 아니라 **API 포맷** 워크플로우 JSON(ComfyUI 메뉴: "Save (API Format)")을 받습니다. `api_url`은 원격 베이스 URL로, 예: `https://xxxx-8188.proxy.runpod.net/` 또는 `http://127.0.0.1:8188` 입니다.
-
-| 노드 | 설명 |
-|------|------|
-| **Load Workflow** | `ComfyUI/user/default/workflows/`의 API 포맷 워크플로우 JSON을 읽어 STRING으로 반환합니다. |
-| **Api Generate** | 워크플로우를 원격 ComfyUI에 보내 완료될 때까지 기다린 뒤 출력 이미지/프레임을 반환합니다. |
-| **Api Submit** | Fire-and-forget 제출. 잡을 기록하고 즉시 `job_id`를 반환합니다 (대기하지 않음). |
-| **Api Collect** | Api Submit으로 제출한 진행 중 잡을 수집합니다. 준비되면 프레임을 반환하고, 아니면 다운스트림을 차단합니다. |
-
-#### Load Workflow
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `filename` | ENUM | (필수) | `user/default/workflows/` 아래의 `.json` 파일 |
-
-| 출력 | 설명 |
-|------|------|
-| `text` | 워크플로우 JSON 내용 |
-
-#### Api Generate
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `workflow` | STRING (입력) | (필수) | API 포맷 워크플로우 JSON 문자열 또는 파일 경로 |
-| `positive_prompt` | STRING (입력) | (필수) | 포지티브 프롬프트. `positive_prompt_id`에 주입됨 |
-| `positive_prompt_id` | STRING | (필수) | 포지티브 프롬프트를 받을 노드 id |
-| `negative_prompt_id` | STRING | "" | `negative_prompt`(제공 시)를 받을 노드 id |
-| `output_id` | STRING | "" | `images`/`gifs` 출력을 가져올 노드 id |
-| `seed` | INT | -1 | `-1`이면 워크플로우의 기존 시드 유지 |
-| `seed_id` | STRING | "" | `seed`/`noise_seed` 입력에 시드를 받을 노드 id |
-| `api_url` | STRING | "" | 원격 ComfyUI 베이스 URL. 예: `https://xxxx-8188.proxy.runpod.net/` 또는 `http://127.0.0.1:8188` |
-| `image_node_id` | STRING | "" | 업로드한 `image`를 받을 LoadImage 노드 id |
-| `timeout_sec` | INT | 300 | 최대 폴링 시간(초) (1–36000) |
-| `negative_prompt` | STRING (입력) | "" | 선택. 비어 있으면 건너뜀 |
-| `image` | IMAGE | (선택) | 선택. 원격에 업로드되어 `image_node_id`에 바인딩됨 |
-| `overrides` | STRING (입력) | "" | 선택. JSON `{node_id: <노드 전체 dict>}`. 각 항목이 **노드 전체를 교체**하며 마지막에 적용됨 |
-
-| 출력 | 설명 |
-|------|------|
-| `output` | 디코드된 이미지/프레임 텐서 (애니메이션 출력은 프레임으로 펼쳐짐) |
-
-#### Api Submit
-
-입력은 **Api Generate**와 동일하며(`timeout_sec` 제외), 선택 `label`이 추가됩니다. OUTPUT_NODE라서 출력을 소비하는 노드가 없어도 실행됩니다.
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `label` | STRING | "" | 선택. 잡과 함께 기록되는 라벨 (이후 Api Collect가 반환) |
-
-| 출력 | 설명 |
-|------|------|
-| `job_id` | 제출된 잡 id (이미 진행 중인 잡이 있으면 빈 문자열) |
-
-#### Api Collect
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `wait_sec` | INT | 0 | `0`이면 준비됐을 때만 수집하고 아니면 즉시 건너뜀. 그 외엔 이 시간(초)까지 대기 (0–36000) |
-| `poll_interval` | FLOAT | 2.0 | 대기 중 폴링 간격(초) (0.5–60.0) |
-
-| 출력 | 설명 |
-|------|------|
-| `output` | 준비된 프레임. 없으면 다운스트림을 건너뛰는 `ExecutionBlocker` |
-| `label` | 제출 시 기록된 라벨 |
-
-> **종류별 단일 진행 잡:** API와 [Grok](#grok-노드-apipackgrok) 노드는 패키지 디렉터리의 단일 `jobs.lock`을 공유하지만 종류별로 슬롯이 분리됩니다 — API 잡과 Grok 잡이 동시에 진행될 수 있고, 각 종류는 하나만 허용됩니다. 해당 종류의 잡이 이미 진행 중이면 Submit은 건너뛰고, Collect가 완료되면 슬롯을 비웁니다. `/loop` 등으로 Collect를 반복 실행하면 완료된 결과를 받아올 수 있습니다.
-
----
-
-### Grok 노드 (`ApiPack/Grok`)
-
-| 노드 | 설명 |
-|------|------|
-| **Grok Generate** | 이미지 한 장으로 Grok Imagine I2V 영상 클립을 만들어 output 폴더에 네이티브 VIDEO로 저장합니다 (노드에서 인라인 미리보기 제공). |
-| **Grok Submit** | Fire-and-forget 제출. 생성 요청만 보내고 즉시 `request_id`를 반환합니다 (대기하지 않음). |
-| **Grok Collect** | Grok Submit으로 제출한 진행 중 잡을 수집합니다. 준비되면 VIDEO를 반환하고, 아니면 다운스트림을 차단합니다. |
-
-#### Grok Generate
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `image` | IMAGE | (필수) | 소스 이미지 (첫 프레임) |
-| `prompt` | STRING | "" | 움직임/연출 설명 (선택) |
-| `duration` | INT | 5 | 영상 길이(초) (1–15) |
-| `resolution` | ENUM | "720p" | "720p" 또는 "480p" |
-| `model` | STRING | "grok-imagine-video-1.5-preview" | Grok 영상 모델 |
-| `filename_prefix` | STRING | "grok/GrokVideo" | ComfyUI output 디렉터리 기준 저장 경로 접두사 |
-| `poll_interval` | INT | 5 | 상태 폴링 간격(초) (1–60) |
-| `timeout` | INT | 600 | 생성 대기 최대 시간(초) (30–3600) |
-| `access_token` | STRING | "" | 선택. 비우면 `GROK_ACCESS_TOKEN` 환경변수 사용 |
-| `refresh_token` | STRING | "" | 선택. 비우면 `GROK_REFRESH_TOKEN` 환경변수 사용 |
-| `client_id` | STRING | "" | 선택. 비우면 `GROK_CLIENT_ID` 환경변수 사용 |
-
-| 출력 | 설명 |
-|------|------|
-| `video` | 생성된 클립(소리 포함). 노드에서 인라인 미리보기로도 표시됨 |
-
-> **자격증명:** 세 토큰을 노드 입력으로 직접 넣거나, 비워 두면 `GROK_ACCESS_TOKEN` / `GROK_REFRESH_TOKEN` / `GROK_CLIENT_ID` 환경변수에서 읽습니다. 401/403 발생 시 access token은 자동 갱신됩니다.
-
-#### Grok Submit
-
-입력은 **Grok Generate**와 동일하며(`poll_interval`/`timeout` 제외), 선택 `label`이 추가됩니다. OUTPUT_NODE라서 출력을 소비하는 노드가 없어도 실행됩니다. mp4 저장 경로는 제출 시점에 예약되어 lock에 기록되고, 클립이 준비되면 Collect가 그 경로에 저장합니다.
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `label` | STRING | "" | 선택. 잡과 함께 기록되는 라벨 (이후 Grok Collect가 반환) |
-
-| 출력 | 설명 |
-|------|------|
-| `request_id` | 제출된 잡의 request id (이미 진행 중인 Grok 잡이 있으면 빈 문자열) |
-
-#### Grok Collect
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `wait_sec` | INT | 0 | `0`이면 준비됐을 때만 수집하고 아니면 즉시 건너뜀. 그 외엔 이 시간(초)까지 대기 (0–3600) |
-| `poll_interval` | FLOAT | 5.0 | 대기 중 폴링 간격(초) (0.5–60.0) |
-| `access_token` | STRING | "" | 선택. 비우면 `GROK_ACCESS_TOKEN` 환경변수 사용 |
-| `refresh_token` | STRING | "" | 선택. 비우면 `GROK_REFRESH_TOKEN` 환경변수 사용 |
-| `client_id` | STRING | "" | 선택. 비우면 `GROK_CLIENT_ID` 환경변수 사용 |
-
-| 출력 | 설명 |
-|------|------|
-| `video` | 준비된 클립. 없으면 다운스트림을 건너뛰는 `ExecutionBlocker` |
-| `label` | 제출 시 기록된 라벨 |
-
-> **수거 시 자격증명:** Collect도 Grok API를 호출(폴링/다운로드)하므로 토큰을 입력 또는 환경변수에서 다시 읽습니다 — 토큰은 lock 파일에 저장하지 **않습니다**. Grok Generate와 같은 방식으로 넣어 주세요.
-
-> **종류별 단일 진행 잡:** Grok과 [API](#api-노드-apipackapi) 노드는 패키지 디렉터리의 단일 `jobs.lock`을 공유하지만 종류별로 슬롯이 분리됩니다 — Grok 잡과 API 잡이 동시에 진행될 수 있고, 각 종류는 하나만 허용됩니다. 해당 종류의 잡이 이미 진행 중이면 Submit은 건너뛰고, Collect가 완료되면 슬롯을 비웁니다. `/loop` 등으로 Collect를 반복 실행하면 완료된 클립을 받아올 수 있습니다.
-
----
-
-### 추론 노드 (`ApiPack/Inference`)
+zero-shot 워크플로는 고객 메시지 하나에 질문 세 개를 던집니다. **Zero-Shot Classification**이 한 번의 요청으로 모두 답하고
+질문마다 한 줄씩 출력하며, **Zero-Shot Answer**가 그중 `route`의 답을 꺼냅니다.
 
 ![Inference Workflow](workflows/comfyui-api-pack-workflow-Inference.png)
 
-| 노드 | 설명 |
-|------|------|
-| **OpenAI Inference** | OpenAI 호환 API로 텍스트 생성. 비전 및 씽킹 모드 지원. |
-| **Clef Decide** | llama-server에 올린 Clef 결정 모델로 zero-shot 분류를 합니다. state에 대한 질문마다 답의 확률을 구합니다. |
+추론 워크플로는 **OpenAI Inference**로 프롬프트를 쓰고, 그 프롬프트로 이미지를 생성합니다.
 
-#### OpenAI Inference
+![API Workflow](workflows/comfyui-api-pack-workflow-API.png)
 
-OpenAI 호환 백엔드를 하나의 노드로 모두 처리합니다 — OpenAI, vLLM, Ollama의 `/v1` 엔드포인트, Gemini의 OpenAI 호환 엔드포인트. `base_url`/`api_key`/`model`만 원하는 서버로 지정하면 됩니다.
+API 워크플로는 **Load Workflow**로 워크플로를 읽어 원격 ComfyUI에서 실행합니다. 한 번은 **Api Generate**로,
+한 번은 **Api Submit**과 **Api Collect**로 실행합니다.
 
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `prompt` | STRING | "Hello, world!" | 사용자 프롬프트 |
-| `system_instruction` | STRING | "You are a helpful assistant." | 시스템 프롬프트 |
-| `base_url` | STRING | "" | API base URL, 예: `https://api.openai.com/v1` (`.env`의 `OPENAI_BASE_URL`로 설정 가능) |
-| `api_key` | STRING | "" | API 키 (`.env`의 `OPENAI_API_KEY`로 설정 가능) |
-| `model` | STRING | "" | 모델명. 비우면 `/models`에 모델이 하나일 때 자동 감지 |
-| `max_output_tokens` | INT | 100 | 최대 출력 토큰 (최대 131072) |
-| `seed` | INT | 0 | 랜덤 시드 |
-| `temperature` | FLOAT | 0.7 | 샘플링 온도 (0.0–2.0) |
-| `think` | BOOLEAN | False | 씽킹 모드 활성화 |
-| `image` | IMAGE | (선택) | 비전 작업용 입력 이미지 |
+## 사용법
 
-| 출력 | 설명 |
-|------|------|
-| `response` | 모델의 답변 (`<think>` 블록은 제거됨) |
-| `reasoning` | 사고 과정. `reasoning_content` 필드 또는 인라인 `<think>...</think>` 블록에서 추출 (없으면 빈 문자열) |
+### Zero-Shot Classification
 
-> **참고:** 응답은 인메모리 캐싱됩니다 (LRU, 최근 10개 입력 조합) — 완전히 동일한 요청을 다시 실행하면 API 호출 없이 캐시된 응답을 반환합니다.
+`questions`에 라벨을 적고 `state`에 글을 넣은 뒤, `summary`와 `answers`에서 답을 받습니다. 이 노드는
+[clef-flash](https://huggingface.co/Cloudflare/clef-flash) 같은 결정 모델을 올린 llama-server의 `/v1/systemone`을
+부릅니다. 이 모델은 글을 생성하지 않고, forward 한 번으로 라벨마다 확률을 매깁니다.
 
-#### Clef Decide
-
-`state`, `questions`, `image`를 llama-server의 `/v1/systemone` 엔드포인트로 보냅니다. 서버에는 [clef-flash](https://huggingface.co/Cloudflare/clef-flash) 같은 Clef 결정 모델이 올라가 있어야 합니다. 이 모델은 글을 생성하지 않고, 질문마다 모든 선택지의 확률을 돌려줍니다. zero-shot 분류에 쓸 수 있습니다. `criteria`에 라벨을 적으면 따로 학습시키지 않아도 모델이 라벨마다 확률을 매깁니다.
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `state` | STRING | "" | 평가할 내용 |
-| `questions` | STRING | `noul` 질문 하나 | 질문 id를 키로 한 질문 객체의 JSON |
-| `base_url` | STRING | "http://localhost:8082" | llama-server 주소 |
-| `api_key` | STRING | "" | API 키. 값이 있으면 Bearer 토큰으로 보냅니다. |
-| `model` | STRING | "" | 모델 이름. 값이 있으면 보냅니다. |
-| `image` | IMAGE | (선택) | state 앞에 놓이는 이미지. 배치의 장마다 하나씩 보냅니다. 서버를 `--mmproj`로 띄워야 합니다. |
-
-| 출력 | 설명 |
-|------|------|
-| `answers` | 응답의 `answers`를 JSON으로 돌려줍니다. 키는 질문 id입니다. |
-
-질문 타입:
+| 위젯 | 하는 일 |
+|------|---------|
+| `state` | 분류할 내용 |
+| `questions` | 질문 id를 키로 한 질문 객체의 JSON. 아래 참고 |
+| `base_url` | llama-server 주소. 기본값 `http://localhost:8082` |
+| `api_key` | 값이 있으면 Bearer 토큰으로 보냅니다 |
+| `model` | 값이 있으면 보냅니다. 모델이 하나뿐인 서버는 무시합니다 |
+| `image` (입력) | state 앞에 놓이는 이미지. 배치의 장마다 하나씩 보냅니다. 서버를 `--mmproj`로 띄워야 합니다 |
+| `answers` (출력) | 응답의 `answers`를 들여쓴 JSON. 키는 질문 id입니다 |
+| `summary` (출력) | 질문마다 `id: value (score)` 한 줄. value와 score는 **Zero-Shot Answer**와 같습니다 |
 
 | 타입 | `criteria` | 답 |
 |------|------------|----|
 | `choice` | `{"선택지": "설명" 또는 null, ...}` | `choice`, `confidence`, `probabilities` |
-| `score` | `["가장 낮음", ..., "가장 높음"]` (2~10단계) | 기댓값 `score`, `confidence`, `legend`, `probabilities` |
-| `noul` | 선택. `{"true": "설명", "false": "설명"}` | 참일 확률 |
+| `score` | `["가장 낮음", ..., "가장 높음"]`, 2~10단계 | 기댓값 `score`, `confidence`, `legend`, `probabilities` |
+| `noul` | 선택. `{"true": "설명", "false": "설명"}` | `noul`, 참일 확률 |
 
 ```json
 {
@@ -221,31 +58,125 @@ OpenAI 호환 백엔드를 하나의 노드로 모두 처리합니다 — OpenAI
 }
 ```
 
+state가 `결제 페이지에서 오류가 나서 주문이 막혔어요.`일 때 `summary`는 이렇습니다.
+
+```
+route: billing (0.76)
+urgency: 오늘 (1.89)
+outage: false (0.24)
+```
+
+입력이 같으면 답도 늘 같습니다. `temperature`, `top_k`, `top_p`, `seed`는 없습니다. 아무것도 샘플링하지 않고,
+확률의 스케일은 모델 파일이 정합니다.
+
+### OpenAI Inference
+
+프롬프트를 **OpenAI Inference**에 넣고 `response`에서 답을 받습니다. OpenAI, vLLM, Ollama의 `/v1` 엔드포인트,
+Gemini의 OpenAI 호환 엔드포인트 등 OpenAI 호환 백엔드면 모두 됩니다.
+
+| 위젯 | 하는 일 |
+|------|---------|
+| `prompt` / `system_instruction` | 사용자 프롬프트와 시스템 프롬프트 |
+| `base_url` | API 주소. 예: `https://api.openai.com/v1`. 비우면 `OPENAI_BASE_URL`을 읽습니다 |
+| `api_key` | 비우면 `OPENAI_API_KEY`를 읽습니다 |
+| `model` | 비우면 서버의 `/models`에 모델이 하나뿐일 때 그것을 씁니다 |
+| `max_output_tokens` | 최대 131072. 기본값 100 |
+| `seed` / `temperature` | 샘플링. `temperature`는 0.0~2.0, 기본값 0.7 |
+| `think` | thinking 모드를 켭니다 |
+| `image` (입력) | 비전 모델에 넣을 이미지 |
+| `response` (출력) | 답. `<think>` 블록은 뺍니다 |
+| `reasoning` (출력) | `reasoning_content`나 본문의 `<think>...</think>` 블록에서 꺼낸 생각 과정. 없으면 빈 문자열 |
+
+서로 다른 요청 10개까지 메모리에 캐시합니다. 같은 요청을 다시 실행하면 API를 부르지 않습니다.
+
+### Api Generate / Api Submit / Api Collect
+
+[RunPod](https://www.runpod.io/) pod 같은 원격 ComfyUI에서 HTTP API로 워크플로를 실행합니다. 워크플로는 UI 형식이
+아니라 **API 형식** JSON입니다(ComfyUI 메뉴: "Save (API Format)"). **Api Generate**는 결과를 기다리고,
+**Api Submit**은 `job_id`를 바로 돌려주며 **Api Collect**가 나중에 결과를 받아옵니다.
+
+| 위젯 | 하는 일 |
+|------|---------|
+| `workflow` (입력) | API 형식 워크플로 JSON 또는 그 파일 경로. **Load Workflow**로 `user/default/workflows/`에서 읽을 수 있습니다 |
+| `api_url` | 원격 ComfyUI 주소. 예: `https://xxxx-8188.proxy.runpod.net/`, `http://127.0.0.1:8188` |
+| `positive_prompt` (입력) / `positive_prompt_id` | 프롬프트와 그것을 받을 노드 id |
+| `negative_prompt` (입력) / `negative_prompt_id` | 네거티브 프롬프트도 같습니다. 비어 있으면 건너뜁니다 |
+| `seed` / `seed_id` | seed와 그것을 `seed`/`noise_seed`로 받을 노드. `-1`이면 워크플로의 seed를 그대로 둡니다 |
+| `image` (입력) / `image_node_id` | 원격에 올려 그 LoadImage 노드에 연결할 이미지 |
+| `output_id` | `images`/`gifs` 출력을 가져올 노드. 애니메이션은 프레임으로 펼칩니다 |
+| `overrides` (입력) | JSON `{node_id: <노드 전체>}`. 항목마다 노드 전체를 바꾸며, 마지막에 적용합니다 |
+| `timeout_sec` | Api Generate만. 폴링 제한 시간(초), 기본값 300 |
+| `label` | Api Submit만. 잡과 함께 기록되고 Api Collect가 돌려줍니다 |
+| `wait_sec` / `poll_interval` | Api Collect만. `wait_sec`가 0이면 준비됐을 때만 받고 아니면 바로 건너뜁니다 |
+
+Api Collect는 잡이 끝났으면 프레임을 돌려줍니다. 아니면 `ExecutionBlocker`를 돌려주고, 그 뒤의 노드는 건너뜁니다.
+
+### Grok Generate / Grok Submit / Grok Collect
+
+이미지 한 장을 Grok Imagine 비디오 클립으로 만들어, 출력 폴더에 미리보기가 붙은 VIDEO로 저장합니다.
+**Grok Generate**는 클립을 기다리고, **Grok Submit**은 `request_id`를 바로 돌려주며 **Grok Collect**가 나중에 클립을
+받아옵니다.
+
+| 위젯 | 하는 일 |
+|------|---------|
+| `image` (입력) | 첫 프레임 |
+| `prompt` | 움직임이나 장면 설명. 선택 |
+| `duration` / `resolution` | 1~15초, `720p` 또는 `480p` |
+| `model` | 기본값 `grok-imagine-video-1.5-preview` |
+| `filename_prefix` | ComfyUI 출력 폴더 아래 경로. 기본값 `grok/GrokVideo` |
+| `poll_interval` / `timeout` | Grok Generate의 폴링. 기본값 5초와 600초 |
+| `access_token` / `refresh_token` / `client_id` | 비우면 `GROK_ACCESS_TOKEN` / `GROK_REFRESH_TOKEN` / `GROK_CLIENT_ID`를 읽습니다. access token은 401/403에서 스스로 갱신됩니다 |
+| `label` | Grok Submit만. 잡과 함께 기록되고 Grok Collect가 돌려줍니다 |
+| `wait_sec` / `poll_interval` | Grok Collect만. `wait_sec`가 0이면 준비됐을 때만 받고 아니면 바로 건너뜁니다 |
+
+Grok Collect도 Grok API를 부르므로 토큰이 필요합니다. 토큰은 잡과 함께 저장하지 않습니다.
+
+API 노드와 Grok 노드는 팩 디렉터리의 `jobs.lock`에 종류마다 진행 중인 잡을 하나씩 둡니다. 같은 종류의 잡이 진행 중이면
+Submit은 건너뛰고, Collect가 끝나면 자리를 비웁니다. `/loop` 등으로 Collect를 반복 실행하면 끝난 결과를 받아옵니다.
+
+## 설치
+
+ComfyUI Manager에서 **ComfyUI-API-Pack**을 검색하거나:
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/alchemine/comfyui-api-pack
+pip install -r comfyui-api-pack/requirements.txt
+```
+
+## 노드
+
+`ApiPack/Inference`
+
+**Zero-Shot Answer**: Zero-Shot Classification의 `answers`에서 질문 하나를 꺼냅니다.
+
+| 출력 | `choice` | `score` | `noul` |
+|------|----------|---------|--------|
+| `value` (STRING) | 고른 선택지 | 가장 가까운 단계의 설명 | 확률이 0.5 이상이면 `"true"`, 아니면 `"false"` |
+| `score` (FLOAT) | 고른 선택지의 확률 | 단계의 기댓값 | 참일 확률 |
+| `confidence` (FLOAT) | `confidence` | `confidence` | `\|2p - 1\|`. 선택지 두 개짜리 `choice`와 같은 식 |
+
+`ApiPack/API`
+
+**Load Workflow**: `user/default/workflows/`의 API 형식 워크플로 JSON을 STRING으로 읽습니다.
+
 ## 설정
 
-> **`.env`는 선택 사항입니다** — 없어도 팩은 항상 정상 로드됩니다. [`.env.example`](.env.example)을 `.env`로 복사한 뒤 필요한 변수만 채우세요 (또는 같은 값을 노드 입력으로 전달). 자격증명이 필요한 노드가 값을 못 찾으면 **실행 시점에** 명확한 에러(ComfyUI 에러 창)를 띄웁니다 — 로딩 단계에선 절대 죽지 않습니다.
-
-### OpenAI Inference 기본값 (`.env` 또는 노드 입력)
-
-**OpenAI Inference** 노드는 먼저 노드 입력에서 `base_url`/`api_key`를 읽고, 입력이 비어 있으면 아래 `.env` 변수를 폴백으로 사용합니다:
+`.env`는 없어도 됩니다. [`.env.example`](.env.example)을 `.env`로 복사하고 쓰는 값만 채우면 됩니다. 노드 입력이
+`.env`보다 우선합니다. 자격 증명이 없으면 팩을 불러올 때가 아니라 노드를 실행할 때 오류가 납니다.
 
 ```
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key
-```
 
-### Grok 자격증명 (`.env` 또는 노드 입력)
-
-**Grok** 노드(Generate / Submit / Collect)는 자격증명을 노드 입력에서 먼저 읽고, 입력이 비어 있으면 아래 `.env` 변수로 대체합니다:
-
-```
 GROK_ACCESS_TOKEN=...
 GROK_REFRESH_TOKEN=...
 GROK_CLIENT_ID=...
 ```
 
-access token은 401/403에서 자동 갱신됩니다. `Grok token refresh failed (...)` 에러가 뜨면 refresh token이나 client_id가 만료/폐기된 것이니, x.ai에서 다시 인증해 값을 갱신하세요.
+`Grok token refresh failed (...)` 오류는 refresh token이나 client_id가 만료되었거나 취소되었다는 뜻입니다.
+x.ai에서 다시 인증하고 값을 바꾸세요.
 
 ## 라이선스
 
-GPL-3.0 License
+GPL-3.0. [LICENSE](LICENSE)를 보세요.

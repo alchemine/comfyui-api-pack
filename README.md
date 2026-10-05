@@ -2,212 +2,50 @@
 
 [English](README.md) | [한국어](README_ko.md)
 
-Nodes that call external APIs: remote ComfyUI API execution, Grok image-to-video, and OpenAI-compatible inference.
+Nodes that call external APIs: zero-shot classification on llama-server, OpenAI-compatible inference,
+remote ComfyUI API execution and Grok image-to-video.
 
-## Installation
+## Example
 
-1. Clone or copy this repository into the `custom_nodes` directory of your ComfyUI installation.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Restart ComfyUI.
+![Workflow](workflows/comfyui-api-pack-workflow-ZeroShot.png)
 
-## Provided Nodes
-
-### API Nodes (`ApiPack/API`)
-
-![API Workflow](workflows/comfyui-api-pack-workflow-API.png)
-
-Run a workflow on a remote ComfyUI instance over its HTTP API (e.g. a [RunPod](https://www.runpod.io/) pod or any reachable ComfyUI). All nodes take the **API-format** workflow JSON (ComfyUI menu: "Save (API Format)"), not the UI workflow format. `api_url` is the remote base URL, e.g. `https://xxxx-8188.proxy.runpod.net/` or `http://127.0.0.1:8188`.
-
-| Node | Description |
-|------|-------------|
-| **Load Workflow** | Loads an API-format workflow JSON from `ComfyUI/user/default/workflows/` and returns it as a STRING. |
-| **Api Generate** | Sends a workflow to a remote ComfyUI, waits for completion, and returns the output image/frames. |
-| **Api Submit** | Fire-and-forget submit; records the job and returns immediately with a `job_id` (does not wait). |
-| **Api Collect** | Collects the in-flight job submitted by Api Submit; returns frames when ready, otherwise blocks downstream. |
-
-#### Load Workflow
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `filename` | ENUM | (required) | A `.json` file under `user/default/workflows/` |
-
-| Output | Description |
-|--------|-------------|
-| `text` | The workflow JSON contents |
-
-#### Api Generate
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `workflow` | STRING (input) | (required) | API-format workflow JSON string, or path to a file |
-| `positive_prompt` | STRING (input) | (required) | Positive prompt, injected into `positive_prompt_id` |
-| `positive_prompt_id` | STRING | (required) | Node id receiving the positive prompt |
-| `negative_prompt_id` | STRING | "" | Node id receiving `negative_prompt` (when provided) |
-| `output_id` | STRING | "" | Node id whose `images`/`gifs` output is fetched and decoded |
-| `seed` | INT | -1 | `-1` keeps the workflow's existing seed |
-| `seed_id` | STRING | "" | Node id whose `seed`/`noise_seed` input receives `seed` |
-| `api_url` | STRING | "" | Remote ComfyUI base URL, e.g. `https://xxxx-8188.proxy.runpod.net/` or `http://127.0.0.1:8188` |
-| `image_node_id` | STRING | "" | LoadImage node id receiving the uploaded `image` |
-| `timeout_sec` | INT | 300 | Max polling time in seconds (1–36000) |
-| `negative_prompt` | STRING (input) | "" | Optional. Skipped if empty |
-| `image` | IMAGE | (optional) | Optional. Uploaded to the remote and bound to `image_node_id` |
-| `overrides` | STRING (input) | "" | Optional JSON `{node_id: <full node dict>}`; each entry **replaces the entire node entry**, applied last |
-
-| Output | Description |
-|--------|-------------|
-| `output` | Decoded image/frame tensor (animated outputs are expanded to frames) |
-
-#### Api Submit
-
-Same inputs as **Api Generate** (minus `timeout_sec`), plus an optional `label`. This is an OUTPUT_NODE, so it runs even when nothing consumes its output.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `label` | STRING | "" | Optional label recorded with the job (returned later by Api Collect) |
-
-| Output | Description |
-|--------|-------------|
-| `job_id` | The submitted job id (empty string if a job is already in progress) |
-
-#### Api Collect
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `wait_sec` | INT | 0 | `0` = collect if ready, else skip immediately; otherwise wait up to this many seconds (0–36000) |
-| `poll_interval` | FLOAT | 2.0 | Seconds between polls while waiting (0.5–60.0) |
-
-| Output | Description |
-|--------|-------------|
-| `output` | Collected frames when ready; otherwise an `ExecutionBlocker` that skips downstream |
-| `label` | The label recorded at submit time |
-
-> **One in-flight job per kind:** The API and [Grok](#grok-nodes-apipackgrok) nodes share a single `jobs.lock` (in the pack directory) but each kind gets its own slot — an API job and a Grok job can both be in flight, but only one of each. Submit skips if a job of that kind is already in flight, and Collect frees the slot once it finishes. Run Collect in a loop (e.g. `/loop`) to pick up the result when it's done.
-
----
-
-### Grok Nodes (`ApiPack/Grok`)
-
-| Node | Description |
-|------|-------------|
-| **Grok Generate** | Generates a Grok Imagine image-to-video clip from a single image and saves it to the output folder as a native VIDEO (with inline preview). |
-| **Grok Submit** | Fire-and-forget submit; sends the generation request and returns immediately with a `request_id` (does not wait). |
-| **Grok Collect** | Collects the in-flight job submitted by Grok Submit; returns the VIDEO when ready, otherwise blocks downstream. |
-
-#### Grok Generate
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `image` | IMAGE | (required) | Source image (first frame) |
-| `prompt` | STRING | "" | Motion / scene description (optional) |
-| `duration` | INT | 5 | Clip length in seconds (1–15) |
-| `resolution` | ENUM | "720p" | "720p" or "480p" |
-| `model` | STRING | "grok-imagine-video-1.5-preview" | Grok video model |
-| `filename_prefix` | STRING | "grok/GrokVideo" | Output path prefix under the ComfyUI output directory |
-| `poll_interval` | INT | 5 | Seconds between status polls (1–60) |
-| `timeout` | INT | 600 | Max seconds to wait for generation (30–3600) |
-| `access_token` | STRING | "" | Optional. Falls back to `GROK_ACCESS_TOKEN` env var |
-| `refresh_token` | STRING | "" | Optional. Falls back to `GROK_REFRESH_TOKEN` env var |
-| `client_id` | STRING | "" | Optional. Falls back to `GROK_CLIENT_ID` env var |
-
-| Output | Description |
-|--------|-------------|
-| `video` | Generated clip (with audio), also previewed inline on the node |
-
-> **Credentials:** Provide the three tokens as node inputs, or leave them empty to read `GROK_ACCESS_TOKEN` / `GROK_REFRESH_TOKEN` / `GROK_CLIENT_ID` from the environment. The access token is auto-refreshed on a 401/403.
-
-#### Grok Submit
-
-Same inputs as **Grok Generate** (minus `poll_interval`/`timeout`), plus an optional `label`. This is an OUTPUT_NODE, so it runs even when nothing consumes its output. The mp4 output path is reserved at submit time and recorded in the lock; Collect writes to it when the clip is ready.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `label` | STRING | "" | Optional label recorded with the job (returned later by Grok Collect) |
-
-| Output | Description |
-|--------|-------------|
-| `request_id` | The submitted job's request id (empty string if a Grok job is already in progress) |
-
-#### Grok Collect
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `wait_sec` | INT | 0 | `0` = collect if ready, else skip immediately; otherwise wait up to this many seconds (0–3600) |
-| `poll_interval` | FLOAT | 5.0 | Seconds between polls while waiting (0.5–60.0) |
-| `access_token` | STRING | "" | Optional. Falls back to `GROK_ACCESS_TOKEN` env var |
-| `refresh_token` | STRING | "" | Optional. Falls back to `GROK_REFRESH_TOKEN` env var |
-| `client_id` | STRING | "" | Optional. Falls back to `GROK_CLIENT_ID` env var |
-
-| Output | Description |
-|--------|-------------|
-| `video` | Collected clip when ready; otherwise an `ExecutionBlocker` that skips downstream |
-| `label` | The label recorded at submit time |
-
-> **Credentials at collect:** Collect also calls the Grok API (to poll/download), so it re-reads the tokens from its inputs or the env — tokens are **not** persisted in the lock file. Provide them the same way as on Grok Generate.
-
-> **One in-flight job per kind:** The Grok and [API](#api-nodes-apipackapi) nodes share a single `jobs.lock` (in the pack directory) but each kind gets its own slot — a Grok job and an API job can both be in flight, but only one of each. Submit skips if a job of that kind is already in flight, and Collect frees the slot once it finishes. Run Collect in a loop (e.g. `/loop`) to pick up the clip when it's done.
-
----
-
-### Inference Nodes (`ApiPack/Inference`)
+The zero-shot workflow asks three questions about a customer message. **Zero-Shot Classification** answers all of
+them in one request and prints one line per question, and **Zero-Shot Answer** picks out the `route` answer.
 
 ![Inference Workflow](workflows/comfyui-api-pack-workflow-Inference.png)
 
-| Node | Description |
-|------|-------------|
-| **OpenAI Inference** | Generate text via any OpenAI-compatible API. Supports vision and thinking mode. |
-| **Clef Decide** | Zero-shot classification with a Clef decision model served by llama-server: probabilities for typed questions about a state. |
+The inference workflow writes prompts with **OpenAI Inference** and generates an image from them.
 
-#### OpenAI Inference
+![API Workflow](workflows/comfyui-api-pack-workflow-API.png)
 
-A single node for every OpenAI-compatible backend — OpenAI, vLLM, Ollama's `/v1` endpoint, and Gemini's OpenAI-compatible endpoint. Just point `base_url`/`api_key`/`model` at the server you want.
+The API workflow loads a workflow with **Load Workflow** and runs it on a remote ComfyUI, once with **Api Generate**
+and once with **Api Submit** and **Api Collect**.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `prompt` | STRING | "Hello, world!" | User prompt |
-| `system_instruction` | STRING | "You are a helpful assistant." | System prompt |
-| `base_url` | STRING | "" | API base URL, e.g. `https://api.openai.com/v1` (or set `OPENAI_BASE_URL` in `.env`) |
-| `api_key` | STRING | "" | API key (or set `OPENAI_API_KEY` in `.env`) |
-| `model` | STRING | "" | Model name. If empty, auto-detected from `/models` when exactly one is available |
-| `max_output_tokens` | INT | 100 | Maximum output tokens (up to 131072) |
-| `seed` | INT | 0 | Random seed |
-| `temperature` | FLOAT | 0.7 | Sampling temperature (0.0–2.0) |
-| `think` | BOOLEAN | False | Enable thinking mode |
-| `image` | IMAGE | (optional) | Input image for vision tasks |
+## Usage
 
-| Output | Description |
-|--------|-------------|
-| `response` | The model's answer (with any `<think>` block stripped out) |
-| `reasoning` | The reasoning/thinking trace, from `reasoning_content` or an inline `<think>...</think>` block (empty if none) |
+### Zero-Shot Classification
 
-> **Note:** Responses are cached in-memory (LRU, last 10 unique input combinations) — re-running an identical request returns the cached response without calling the API.
+Write the labels in `questions`, feed the text into `state`, read the answers out of `summary` and `answers`. It calls
+`/v1/systemone` on a llama-server running a decision model such as
+[clef-flash](https://huggingface.co/Cloudflare/clef-flash), which scores every label in one forward pass instead of
+generating text.
 
-#### Clef Decide
-
-Sends `state`, `questions` and `image` to llama-server's `/v1/systemone` endpoint, serving a Clef decision model such as [clef-flash](https://huggingface.co/Cloudflare/clef-flash). The model returns a probability for every option of every question instead of generating text. Use it for zero-shot classification: write the labels in `criteria` and the model scores them without any training on your data.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `state` | STRING | "" | Content to evaluate |
-| `questions` | STRING | one `noul` question | JSON object mapping a question id to a typed question |
-| `base_url` | STRING | "http://localhost:8082" | llama-server base URL |
-| `api_key` | STRING | "" | API key, sent as a Bearer token when set |
-| `model` | STRING | "" | Model name, sent when set |
-| `image` | IMAGE | (optional) | Images placed before the state, one per batch item. The server must be started with `--mmproj` |
-
-| Output | Description |
-|--------|-------------|
-| `answers` | The response's `answers` as JSON, keyed by question id |
-
-Question types:
+| Widget | What it does |
+|--------|--------------|
+| `state` | The content to classify |
+| `questions` | A JSON object mapping a question id to a typed question, see below |
+| `base_url` | llama-server base URL. Default `http://localhost:8082` |
+| `api_key` | Sent as a Bearer token when set |
+| `model` | Sent when set. A server with one model ignores it |
+| `image` (input) | Images placed before the state, one per batch item. The server must be started with `--mmproj` |
+| `answers` (output) | The response's `answers` as indented JSON, keyed by question id |
+| `summary` (output) | One `id: value (score)` line per question, with value and score as in **Zero-Shot Answer** |
 
 | Type | `criteria` | Answer |
 |------|------------|--------|
 | `choice` | `{"option": "description" or null, ...}` | `choice`, `confidence`, `probabilities` |
-| `score` | `["lowest", ..., "highest"]` (2 to 10 levels) | expected `score`, `confidence`, `legend`, `probabilities` |
-| `noul` | optional `{"true": "description", "false": "description"}` | probability of true |
+| `score` | `["lowest", ..., "highest"]`, 2 to 10 levels | expected `score`, `confidence`, `legend`, `probabilities` |
+| `noul` | Optional `{"true": "description", "false": "description"}` | `noul`, the probability of true |
 
 ```json
 {
@@ -221,31 +59,127 @@ Question types:
 }
 ```
 
+With the state `Our checkout started returning errors and orders are blocked.`, `summary` is:
+
+```
+route: technical (0.96)
+urgency: Today (1.88)
+outage: true (0.81)
+```
+
+The same input always gives the same answers. There is no `temperature`, `top_k`, `top_p` or `seed`: nothing is
+sampled, and the model file fixes how the probabilities are scaled.
+
+### OpenAI Inference
+
+Feed a prompt into **OpenAI Inference**, read the answer out of `response`. Works with any OpenAI-compatible backend:
+OpenAI, vLLM, Ollama's `/v1` endpoint, Gemini's OpenAI-compatible endpoint.
+
+| Widget | What it does |
+|--------|--------------|
+| `prompt` / `system_instruction` | User and system prompts |
+| `base_url` | API base URL, e.g. `https://api.openai.com/v1`. Empty reads `OPENAI_BASE_URL` |
+| `api_key` | Empty reads `OPENAI_API_KEY` |
+| `model` | Empty picks the model from `/models` when the server has exactly one |
+| `max_output_tokens` | Up to 131072. Default 100 |
+| `seed` / `temperature` | Sampling. `temperature` 0.0 to 2.0, default 0.7 |
+| `think` | Turns on thinking mode |
+| `image` (input) | Input image for vision models |
+| `response` (output) | The answer, with any `<think>` block stripped out |
+| `reasoning` (output) | The thinking trace from `reasoning_content` or an inline `<think>...</think>` block, empty if none |
+
+The last 10 distinct requests are cached in memory, so running an identical request again does not call the API.
+
+### Api Generate / Api Submit / Api Collect
+
+Run a workflow on a remote ComfyUI over its HTTP API, such as a [RunPod](https://www.runpod.io/) pod. The workflow is
+the **API-format** JSON (ComfyUI menu: "Save (API Format)"), not the UI format. **Api Generate** waits for the result;
+**Api Submit** returns a `job_id` at once and **Api Collect** picks the result up later.
+
+| Widget | What it does |
+|--------|--------------|
+| `workflow` (input) | API-format workflow JSON, or a path to one. **Load Workflow** reads one from `user/default/workflows/` |
+| `api_url` | Remote ComfyUI base URL, e.g. `https://xxxx-8188.proxy.runpod.net/` or `http://127.0.0.1:8188` |
+| `positive_prompt` (input) / `positive_prompt_id` | The prompt and the node id that receives it |
+| `negative_prompt` (input) / `negative_prompt_id` | Same for the negative prompt. Skipped when empty |
+| `seed` / `seed_id` | The seed and the node whose `seed`/`noise_seed` receives it. `-1` keeps the workflow's seed |
+| `image` (input) / `image_node_id` | An image uploaded to the remote and bound to that LoadImage node |
+| `output_id` | The node whose `images`/`gifs` output is fetched. Animated outputs become frames |
+| `overrides` (input) | JSON `{node_id: <full node dict>}`. Each entry replaces the whole node, applied last |
+| `timeout_sec` | Api Generate only. Polling limit in seconds, default 300 |
+| `label` | Api Submit only. Recorded with the job and returned by Api Collect |
+| `wait_sec` / `poll_interval` | Api Collect only. `wait_sec` 0 collects if ready and otherwise skips at once |
+
+Api Collect returns the frames when the job is done. Otherwise it returns an `ExecutionBlocker`, which skips the nodes
+downstream.
+
+### Grok Generate / Grok Submit / Grok Collect
+
+Turn one image into a Grok Imagine video clip, saved to the output folder as a native VIDEO with an inline preview.
+**Grok Generate** waits for the clip; **Grok Submit** returns a `request_id` at once and **Grok Collect** picks the
+clip up later.
+
+| Widget | What it does |
+|--------|--------------|
+| `image` (input) | The first frame |
+| `prompt` | Motion or scene description, optional |
+| `duration` / `resolution` | 1 to 15 seconds, `720p` or `480p` |
+| `model` | Default `grok-imagine-video-1.5-preview` |
+| `filename_prefix` | Output path under the ComfyUI output directory. Default `grok/GrokVideo` |
+| `poll_interval` / `timeout` | Grok Generate polling. Defaults 5 and 600 seconds |
+| `access_token` / `refresh_token` / `client_id` | Empty reads `GROK_ACCESS_TOKEN` / `GROK_REFRESH_TOKEN` / `GROK_CLIENT_ID`. The access token refreshes itself on a 401/403 |
+| `label` | Grok Submit only. Recorded with the job and returned by Grok Collect |
+| `wait_sec` / `poll_interval` | Grok Collect only. `wait_sec` 0 collects if ready and otherwise skips at once |
+
+Grok Collect calls the Grok API too, so it needs the tokens as well. They are not stored with the job.
+
+The API and Grok nodes keep one in-flight job each in `jobs.lock` in the pack directory. Submit skips while a job of
+its kind is in flight, and Collect frees the slot once it finishes. Run Collect in a loop (e.g. `/loop`) to pick up
+the result when it is done.
+
+## Installation
+
+Search for **ComfyUI-API-Pack** in ComfyUI Manager, or:
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/alchemine/comfyui-api-pack
+pip install -r comfyui-api-pack/requirements.txt
+```
+
+## Nodes
+
+`ApiPack/Inference`
+
+**Zero-Shot Answer**: picks one question out of the Zero-Shot Classification `answers`.
+
+| Output | `choice` | `score` | `noul` |
+|--------|----------|---------|--------|
+| `value` (STRING) | The chosen option | The description of the nearest level | `"true"` if the probability is 0.5 or more, else `"false"` |
+| `score` (FLOAT) | Probability of the chosen option | Expected level | Probability of true |
+| `confidence` (FLOAT) | `confidence` | `confidence` | `\|2p - 1\|`, as for a two-option `choice` |
+
+`ApiPack/API`
+
+**Load Workflow**: reads an API-format workflow JSON from `user/default/workflows/` as a STRING.
+
 ## Configuration
 
-> **`.env` is optional** — the pack always loads without it. Copy [`.env.example`](.env.example) to `.env` and set only the variables you need (or pass the same values as node inputs). A node that needs a credential it can't find raises a clear error (shown as a ComfyUI error dialog) **when you run it**; nothing fails at load time.
-
-### OpenAI Inference defaults (`.env` or node inputs)
-
-The **OpenAI Inference** node reads `base_url`/`api_key` from the node inputs first, falling back to these `.env` variables when the inputs are empty:
+`.env` is optional. Copy [`.env.example`](.env.example) to `.env` and set only what you use; the node inputs take
+priority over it. A missing credential raises an error when the node runs, not when the pack loads.
 
 ```
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key
-```
 
-### Grok credentials (`.env` or node inputs)
-
-The **Grok** nodes (Generate / Submit / Collect) read their credentials from the node inputs first, falling back to these `.env` variables when the inputs are empty:
-
-```
 GROK_ACCESS_TOKEN=...
 GROK_REFRESH_TOKEN=...
 GROK_CLIENT_ID=...
 ```
 
-The access token is auto-refreshed on a 401/403. If you hit a `Grok token refresh failed (...)` error, the refresh token or client_id has expired/been revoked — re-authenticate with x.ai and update these values.
+A `Grok token refresh failed (...)` error means the refresh token or client_id has expired or been revoked:
+re-authenticate with x.ai and update them.
 
 ## License
 
-GPL-3.0 License
+GPL-3.0. See [LICENSE](LICENSE).

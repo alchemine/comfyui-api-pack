@@ -303,8 +303,22 @@ class OpenAIInference(BaseInference):
         )
 
 
-class ClefDecide(BaseInference):
-    """Decision with a Clef model served by llama-server's `/v1/systemone`.
+def _decide(answer: dict) -> tuple[str, float, float]:
+    """(value, score, confidence) of one `/v1/systemone` answer."""
+    if answer["type"] == "choice":
+        choice = answer["choice"]
+        return choice, answer["probabilities"][choice], answer["confidence"]
+    if answer["type"] == "score":
+        level = answer["legend"][str(round(answer["score"]))]
+        return level, answer["score"], answer["confidence"]
+    # `noul` has no confidence; use the one of a two-option choice.
+    p = answer["noul"]
+    return ("true" if p >= 0.5 else "false"), p, abs(2 * p - 1)
+
+
+class ZeroShotClassification(BaseInference):
+    """Zero-shot classification with a decision model served by llama-server's
+    `/v1/systemone` (e.g. clef-flash).
 
     The model does not generate text: it returns a probability for every option
     of every question in `questions`, given `state` (and `image`).
@@ -320,7 +334,8 @@ class ClefDecide(BaseInference):
             Must be a 4D tensor in the shape of [B, H, W, C].
 
     Returns:
-        tuple[str]: The response's `answers` as JSON.
+        tuple[str, str]: The response's `answers` as JSON, and one
+            `id: value (score)` line per question.
     """
 
     INPUT_TYPES = lambda: {
@@ -349,8 +364,8 @@ class ClefDecide(BaseInference):
             "image": ("IMAGE", {"default": None}),
         },
     }
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("answers",)
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("answers", "summary")
     FUNCTION = "execute"
     CATEGORY = "ApiPack/Inference"
 
@@ -363,7 +378,7 @@ class ClefDecide(BaseInference):
         api_key: str = "",
         model: str = "",
         image: torch.Tensor | None = None,
-    ) -> tuple[str]:
+    ) -> tuple[str, str]:
         payload = {"state": state, "questions": json.loads(questions)}
         if model:
             payload["model"] = model
@@ -382,7 +397,42 @@ class ClefDecide(BaseInference):
         )
         response.raise_for_status()
         answers = response.json()["answers"]
-        return (json.dumps(answers, ensure_ascii=False),)
+
+        lines = []
+        for question_id, answer in answers.items():
+            value, score, _ = _decide(answer)
+            lines.append(f"{question_id}: {value} ({score:.2f})")
+        return (json.dumps(answers, ensure_ascii=False, indent=2), "\n".join(lines))
+
+
+class ZeroShotAnswer:
+    """Pick one question's answer out of `ZeroShotClassification`'s `answers`.
+
+    Args:
+        answers (str): `answers` output of `ZeroShotClassification`.
+        question_id (str): Question id.
+
+    Returns:
+        tuple[str, float, float]: value, score and confidence.
+            `choice`: the chosen option, its probability, confidence.
+            `score`: the nearest level, the expected level, confidence.
+            `noul`: "true"/"false", the probability of true, |2p - 1|.
+    """
+
+    INPUT_TYPES = lambda: {
+        "required": {
+            "answers": ("STRING", {"forceInput": True}),
+            "question_id": ("STRING", {"default": ""}),
+        },
+    }
+    RETURN_TYPES = ("STRING", "FLOAT", "FLOAT")
+    RETURN_NAMES = ("value", "score", "confidence")
+    FUNCTION = "execute"
+    CATEGORY = "ApiPack/Inference"
+
+    @classmethod
+    def execute(cls, answers: str, question_id: str) -> tuple[str, float, float]:
+        return _decide(json.loads(answers)[question_id])
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 [project]
 name = "comfyui-api-pack"
 description = """Call external APIs: remote ComfyUI, Grok, OpenAI-compatible inference, zero-shot classification
-[a/API](https://github.com/alchemine/comfyui-api-pack/blob/main/workflows/comfyui-api-pack-workflow-API.png): remote ComfyUI API execution
-[a/Inference](https://github.com/alchemine/comfyui-api-pack/blob/main/workflows/comfyui-api-pack-workflow-Inference.png): OpenAI-compatible API Inference, Clef zero-shot classification"""
+[a/Inference](https://github.com/alchemine/comfyui-api-pack/blob/main/workflows/comfyui-api-pack-workflow-Inference.png): OpenAI-compatible API Inference
+[a/ZeroShot](https://github.com/alchemine/comfyui-api-pack/blob/main/workflows/comfyui-api-pack-workflow-ZeroShot.png): zero-shot classification
+[a/API](https://github.com/alchemine/comfyui-api-pack/blob/main/workflows/comfyui-api-pack-workflow-API.png): remote ComfyUI API execution"""
 
 version = "1.0.0"
 license = { file = "LICENSE" }
